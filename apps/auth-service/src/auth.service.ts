@@ -1,37 +1,50 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-
-type User = {
-  id: string;
-  email: string;
-  password: string;
-};
+import { Repository } from 'typeorm';
+import { User } from './users/user.entity';
 
 @Injectable()
 export class AuthService {
-  private users: User[] = [];
+  constructor(
+    private jwtService: JwtService,
 
-  constructor(private jwtService: JwtService) {}
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+  ) {}
 
   async register(email: string, password: string) {
+    const existingUser = await this.userRepo.findOne({ where: { email } });
+
+    if (existingUser) {
+      throw new BadRequestException('Email already exists');
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user: User = {
-      id: Date.now().toString(),
+    const user = this.userRepo.create({
       email,
       password: hashedPassword,
-    };
+    });
 
-    this.users.push(user);
+    await this.userRepo.save(user);
 
     return {
       message: 'User registered successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+      },
     };
   }
 
   async login(email: string, password: string) {
-    const user = this.users.find((u) => u.email === email);
+    const user = await this.userRepo.findOne({ where: { email } });
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
